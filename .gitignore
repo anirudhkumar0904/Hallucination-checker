@@ -1,0 +1,23 @@
+# Environment variables
+.env
+*.env
+env.txt
+
+# Python cache & virtualenvs
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+
+# Temporary data & caches
+temp/
+tmp/
+*.pdf
+.cache/
+chroma/
+
+# IDE
+.vscode/
+.idea/
