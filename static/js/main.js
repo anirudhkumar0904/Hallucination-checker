@@ -1,6 +1,6 @@
 /**
- * TruthLens DeepSeek / Claude Client Engine
- * Conversational Stream & Grounding Accordions
+ * TruthLens Enterprise Client Engine
+ * SOC2 & Compliance Stream UI
  */
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -25,26 +25,25 @@ document.addEventListener("DOMContentLoaded", () => {
     const askBtn = document.getElementById("askBtn");
     const rogueModeToggle = document.getElementById("rogueModeToggle");
 
-    // --- Auto resize textarea ---
+    // Textarea resize
     questionInput.addEventListener("input", () => {
         questionInput.style.height = "auto";
-        questionInput.style.height = Math.min(questionInput.scrollHeight, 120) + "px";
+        questionInput.style.height = Math.min(questionInput.scrollHeight, 140) + "px";
     });
 
-    // --- Upload Handlers ---
+    // Upload
     dropZone.addEventListener("click", () => pdfInput.click());
-    dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.style.borderColor = "#a855f7"; });
+    dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.style.borderColor = "#525866"; });
     dropZone.addEventListener("dragleave", (e) => { e.preventDefault(); dropZone.style.borderColor = ""; });
     dropZone.addEventListener("drop", (e) => {
-        e.preventDefault();
-        dropZone.style.borderColor = "";
-        if (e.dataTransfer.files[0]) handleUpload(e.dataTransfer.files[0]);
+        e.preventDefault(); dropZone.style.borderColor = "";
+        if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
     });
-    pdfInput.addEventListener("change", () => { if (pdfInput.files[0]) handleUpload(pdfInput.files[0]); });
+    pdfInput.addEventListener("change", () => { if (pdfInput.files[0]) processFile(pdfInput.files[0]); });
 
-    async function handleUpload(file) {
-        if (!file.name.toLowerCase().endsWith(".pdf")) return showError("Only PDF documents are supported.");
-        if (file.size > 50 * 1024 * 1024) return showError("File size exceeds 50MB limit.");
+    async function processFile(file) {
+        if (!file.name.toLowerCase().endsWith(".pdf")) return showError("Invalid file type. Only PDF documents are accepted.");
+        if (file.size > 50 * 1024 * 1024) return showError("File exceeds 50MB payload limit.");
 
         hideError();
         dropContent.classList.add("hidden");
@@ -56,12 +55,12 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             const res = await fetch("/upload", { method: "POST", body: fd });
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || "Upload failed");
+            if (!res.ok) throw new Error(data.error || "Processing failure");
 
             currentDocId = data.doc_id;
             activeFilename.textContent = file.name;
             pillFilename.textContent = file.name;
-            activeMeta.textContent = `(${data.pages} pages • ${data.chunks} vector chunks)`;
+            activeMeta.textContent = `(${data.pages} pages • ${data.chunks} indexed chunks)`;
 
             introContainer.classList.add("hidden");
             workspaceContainer.classList.remove("hidden");
@@ -82,24 +81,23 @@ document.addEventListener("DOMContentLoaded", () => {
         currentDocId = null;
         workspaceContainer.classList.add("hidden");
         introContainer.classList.remove("hidden");
-        // Reset stream to initial greeting
         chatStream.innerHTML = `
-            <div class="msg-wrapper system">
-                <div class="avatar-box gem">🤖</div>
-                <div class="bubble system-bubble">
-                    <p>Document session reset. Upload a new PDF above to begin.</p>
+            <div class="msg-row system">
+                <div class="icon-avatar sys">⚡</div>
+                <div class="card system-card">
+                    <p>Session reset. Select a document above to evaluate.</p>
                 </div>
             </div>
         `;
     });
 
-    // --- Q&A Handlers ---
-    askBtn.addEventListener("click", sendQuery);
+    // Q&A
+    askBtn.addEventListener("click", executeQuery);
     questionInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendQuery(); }
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); executeQuery(); }
     });
 
-    async function sendQuery() {
+    async function executeQuery() {
         const q = questionInput.value.trim();
         if (!q || askBtn.disabled) return;
 
@@ -109,25 +107,23 @@ document.addEventListener("DOMContentLoaded", () => {
         questionInput.style.height = "auto";
         askBtn.disabled = true;
 
-        // Append User Msg
-        appendMessage("user", q);
+        appendRow("usr", q);
 
-        // Append Assistant Loading Skeleton
-        const loadingId = "loader_" + Date.now();
-        const loadingWrapper = document.createElement("div");
-        loadingWrapper.className = "msg-wrapper assistant";
-        loadingWrapper.id = loadingId;
-        loadingWrapper.innerHTML = `
-            <div class="avatar-box gem">🤖</div>
-            <div class="bubble">
-                <div style="display:flex;align-items:center;gap:0.75rem;color:#c084fc;">
-                    <div class="modern-loader"></div>
-                    <span>${isRogue ? "Simulating rogue AI & auditing grounding..." : "Searching TF-IDF vectors & auditing atomic claims..."}</span>
+        const loaderId = "ldr_" + Date.now();
+        const ldrRow = document.createElement("div");
+        ldrRow.className = "msg-row assistant";
+        ldrRow.id = loaderId;
+        ldrRow.innerHTML = `
+            <div class="icon-avatar">AI</div>
+            <div class="card">
+                <div class="loading-state" style="justify-content:flex-start;color:#ededed;">
+                    <div class="spinner-zinc"></div>
+                    <span>${isRogue ? "Simulating unverified response & checking compliance..." : "Retrieving passages & auditing atomic claims..."}</span>
                 </div>
             </div>
         `;
-        chatStream.appendChild(loadingWrapper);
-        scrollToBottom();
+        chatStream.appendChild(ldrRow);
+        scrollBottom();
 
         try {
             const res = await fetch("/ask", {
@@ -136,100 +132,99 @@ document.addEventListener("DOMContentLoaded", () => {
                 body: JSON.stringify({ doc_id: currentDocId, question: q, rogue_mode: isRogue })
             });
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || "Failed query");
+            if (!res.ok) throw new Error(data.error || "Execution error");
 
-            // Replace loader with AI response + DeepSeek Grounding Box
-            const loaderElem = document.getElementById(loadingId);
-            if (loaderElem) loaderElem.remove();
+            const ldrElem = document.getElementById(loaderId);
+            if (ldrElem) ldrElem.remove();
 
-            renderAssistantAnswer(data.answer, data.trust_score, data.claims, isRogue);
+            renderComplianceCard(data.answer, data.trust_score, data.claims, isRogue);
 
         } catch (err) {
-            const loaderElem = document.getElementById(loadingId);
-            if (loaderElem) {
-                loaderElem.innerHTML = `
-                    <div class="avatar-box gem">🤖</div>
-                    <div class="bubble" style="border-color:#ef4444;">
-                        <p style="color:#ef4444;">Verification Error: ${escapeHtml(err.message)}</p>
+            const ldrElem = document.getElementById(loaderId);
+            if (ldrElem) {
+                ldrElem.innerHTML = `
+                    <div class="icon-avatar">AI</div>
+                    <div class="card" style="border-color:#ef4444;color:#ef4444;">
+                        <p>System Error: ${escapeHtml(err.message)}</p>
                     </div>
                 `;
             }
         } finally {
             askBtn.disabled = false;
-            scrollToBottom();
+            scrollBottom();
         }
     }
 
-    function appendMessage(role, text) {
-        const wrapper = document.createElement("div");
-        wrapper.className = `msg-wrapper ${role}`;
-        wrapper.innerHTML = `
-            <div class="avatar-box ${role === 'user' ? 'user' : 'gem'}">${role === 'user' ? '👤' : '🤖'}</div>
-            <div class="bubble ${role === 'user' ? 'user-bubble' : ''}">
-                <p>${escapeHtml(text).replace(/\n/g, '<br>')}</p>
+    function appendRow(role, txt) {
+        const row = document.createElement("div");
+        row.className = `msg-row ${role === 'usr' ? 'user' : 'assistant'}`;
+        row.innerHTML = `
+            <div class="icon-avatar ${role === 'usr' ? 'usr' : ''}">${role === 'usr' ? 'U' : 'AI'}</div>
+            <div class="card ${role === 'usr' ? 'user-card' : ''}">
+                <p>${escapeHtml(txt).replace(/\n/g, '<br>')}</p>
             </div>
         `;
-        chatStream.appendChild(wrapper);
-        scrollToBottom();
+        chatStream.appendChild(row);
+        scrollBottom();
     }
 
-    function renderAssistantAnswer(answer, score, claims, isRogue) {
-        const percentage = Math.round(score * 100);
-        let badgeClass = "badge-red";
-        let titleText = `${percentage}% Trust • Hallucinated Risk`;
+    function renderComplianceCard(ans, score, claims, isRogue) {
+        const pct = Math.round(score * 100);
+        let pillCls = "pill-red"; let pillTxt = `${pct}% COMPLIANT • UNVERIFIED`;
 
-        if (percentage >= 80) { badgeClass = "badge-green"; titleText = `${percentage}% Grounded Verified`; }
-        else if (percentage >= 50) { badgeClass = "badge-yellow"; titleText = `${percentage}% Partial Grounding`; }
+        if (pct >= 80) { pillCls = "pill-green"; pillTxt = `${pct}% COMPLIANT • VERIFIED`; }
+        else if (pct >= 50) { pillCls = "pill-amber"; pillTxt = `${pct}% COMPLIANT • REVIEW`; }
 
-        const boxClass = (percentage < 60 || isRogue) ? "grounding-box hallucinated-mode" : "grounding-box";
+        const boxCls = (pct < 60 || isRogue) ? "compliance-box hallucinated" : "compliance-box";
 
         let claimsHtml = "";
         claims.forEach(c => {
             const v = str(c.verdict).toUpperCase();
-            let cls = "hallucinated"; let tagTxt = "❌ Hallucinated";
-            if (v.includes("SUPPORTED")) { cls = "supported"; tagTxt = "✅ Grounded"; }
-            else if (v.includes("PARTIAL")) { cls = "partial"; tagTxt = "⚠️ Partial"; }
+            let rowCls = "hallucinated"; let hdrTxt = "❌ Hallucinated";
+            if (v.includes("SUPPORTED")) { rowCls = "supported"; hdrTxt = "✅ Supported"; }
+            else if (v.includes("PARTIAL")) { rowCls = "partial"; hdrTxt = "⚠️ Partial"; }
 
             claimsHtml += `
-                <div class="claim-card-ds ${cls}">
-                    <span class="claim-tag ${cls}">${tagTxt} (Page ${escapeHtml(c.source_page || "N/A")})</span>
-                    <div class="quote-txt">"${escapeHtml(c.claim)}"</div>
-                    <div class="reason-txt">${escapeHtml(c.reasoning || "")}</div>
+                <div class="claim-row ${rowCls}">
+                    <div class="claim-hdr ${rowCls}">
+                        <span>${hdrTxt}</span>
+                        <span>Page ${escapeHtml(c.source_page || "N/A")}</span>
+                    </div>
+                    <div class="q-text">"${escapeHtml(c.claim)}"</div>
+                    <div class="r-text">${escapeHtml(c.reasoning || "")}</div>
                 </div>
             `;
         });
 
-        const wrapper = document.createElement("div");
-        wrapper.className = "msg-wrapper assistant";
-        wrapper.innerHTML = `
-            <div class="avatar-box gem">🤖</div>
-            <div class="bubble">
-                <!-- AI Answer -->
-                <div style="font-size:1.02rem;line-height:1.7;color:#fff;margin-bottom:1.5rem;">
-                    ${escapeHtml(answer).replace(/\n/g, '<br>')}
+        const row = document.createElement("div");
+        row.className = "msg-row assistant";
+        row.innerHTML = `
+            <div class="icon-avatar">AI</div>
+            <div class="card">
+                <div style="margin-bottom:1.25rem;">
+                    ${escapeHtml(ans).replace(/\n/g, '<br>')}
                 </div>
 
-                <!-- DeepSeek Expandable Accordion -->
-                <div class="${boxClass}">
-                    <div class="grounding-header" onclick="this.nextElementSibling.classList.toggle('hidden')">
-                        <div class="gh-left">
-                            <span>🧠</span>
-                            <span>Atomic Grounding Audit</span>
-                            <span class="trust-badge ${badgeClass}">${titleText}</span>
+                <div class="${boxCls}">
+                    <div class="cb-header" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                        <div class="cb-left">
+                            <span>🛡️</span>
+                            <span>Sentence Attribution & Audit Log</span>
+                            <span class="status-pill-ent ${pillCls}">${pillTxt}</span>
                         </div>
-                        <span style="font-size:0.8rem;color:#9ca3af;">Audited ${claims.length} claims ▼</span>
+                        <span style="color:#878c93;font-size:0.75rem;">${claims.length} claims ▼</span>
                     </div>
-                    <div class="claims-grid">
+                    <div class="cb-content">
                         ${claimsHtml}
                     </div>
                 </div>
             </div>
         `;
-        chatStream.appendChild(wrapper);
-        scrollToBottom();
+        chatStream.appendChild(row);
+        scrollBottom();
     }
 
-    function scrollToBottom() { chatStream.scrollTop = chatStream.scrollHeight; }
+    function scrollBottom() { chatStream.scrollTop = chatStream.scrollHeight; }
     function str(v) { return v ? String(v) : ""; }
     function escapeHtml(t) {
         if (!t) return "";
