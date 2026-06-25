@@ -1,110 +1,73 @@
 /**
- * TruthLens Frontend Client Engine
- * Production Ready & XSS-Protected
+ * TruthLens DeepSeek / Claude Client Engine
+ * Conversational Stream & Grounding Accordions
  */
 
 document.addEventListener("DOMContentLoaded", () => {
-    // State
     let currentDocId = null;
 
     // Elements
+    const introContainer = document.getElementById("introContainer");
+    const workspaceContainer = document.getElementById("workspaceContainer");
     const dropZone = document.getElementById("dropZone");
     const pdfInput = document.getElementById("pdfInput");
     const dropContent = document.getElementById("dropContent");
     const uploadProgress = document.getElementById("uploadProgress");
     const uploadError = document.getElementById("uploadError");
-    const uploadSection = document.getElementById("uploadSection");
-    
-    const workspace = document.getElementById("workspace");
-    const docTitle = document.getElementById("docTitle");
-    const docMeta = document.getElementById("docMeta");
+
+    const chatStream = document.getElementById("chatStream");
+    const activeFilename = document.getElementById("activeFilename");
+    const activeMeta = document.getElementById("activeMeta");
+    const pillFilename = document.getElementById("pillFilename");
     const changeDocBtn = document.getElementById("changeDocBtn");
 
     const questionInput = document.getElementById("questionInput");
     const askBtn = document.getElementById("askBtn");
-    const askError = document.getElementById("askError");
-    const answerBox = document.getElementById("answerBox");
-    const answerContent = document.getElementById("answerContent");
-    const askLoader = document.getElementById("askLoader");
+    const rogueModeToggle = document.getElementById("rogueModeToggle");
 
-    const auditStatus = document.getElementById("auditStatus");
-    const trustScoreCard = document.getElementById("trustScoreCard");
-    const scoreCircle = document.getElementById("scoreCircle");
-    const scoreVal = document.getElementById("scoreVal");
-    const verdictSummaryTitle = document.getElementById("verdictSummaryTitle");
-    const verdictSummaryDesc = document.getElementById("verdictSummaryDesc");
-    const claimsList = document.getElementById("claimsList");
+    // --- Auto resize textarea ---
+    questionInput.addEventListener("input", () => {
+        questionInput.style.height = "auto";
+        questionInput.style.height = Math.min(questionInput.scrollHeight, 120) + "px";
+    });
 
     // --- Upload Handlers ---
     dropZone.addEventListener("click", () => pdfInput.click());
-
-    dropZone.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        dropZone.style.borderColor = "#a855f7";
-        dropZone.style.background = "rgba(168, 85, 247, 0.08)";
-    });
-
-    dropZone.addEventListener("dragleave", (e) => {
-        e.preventDefault();
-        dropZone.style.borderColor = "";
-        dropZone.style.background = "";
-    });
-
+    dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.style.borderColor = "#a855f7"; });
+    dropZone.addEventListener("dragleave", (e) => { e.preventDefault(); dropZone.style.borderColor = ""; });
     dropZone.addEventListener("drop", (e) => {
         e.preventDefault();
         dropZone.style.borderColor = "";
-        dropZone.style.background = "";
-        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-            handleFileUpload(e.dataTransfer.files[0]);
-        }
+        if (e.dataTransfer.files[0]) handleUpload(e.dataTransfer.files[0]);
     });
+    pdfInput.addEventListener("change", () => { if (pdfInput.files[0]) handleUpload(pdfInput.files[0]); });
 
-    pdfInput.addEventListener("change", () => {
-        if (pdfInput.files && pdfInput.files[0]) {
-            handleFileUpload(pdfInput.files[0]);
-        }
-    });
+    async function handleUpload(file) {
+        if (!file.name.toLowerCase().endsWith(".pdf")) return showError("Only PDF documents are supported.");
+        if (file.size > 50 * 1024 * 1024) return showError("File size exceeds 50MB limit.");
 
-    async function handleFileUpload(file) {
-        if (!file.name.toLowerCase().endsWith(".pdf")) {
-            showUploadError("Invalid file type. Please upload a valid PDF file.");
-            return;
-        }
-
-        if (file.size > 50 * 1024 * 1024) {
-            showUploadError("File size exceeds the 50MB limit.");
-            return;
-        }
-
-        hideUploadError();
+        hideError();
         dropContent.classList.add("hidden");
         uploadProgress.classList.remove("hidden");
 
-        const formData = new FormData();
-        formData.append("file", file);
+        const fd = new FormData();
+        fd.append("file", file);
 
         try {
-            const res = await fetch("/upload", {
-                method: "POST",
-                body: formData
-            });
-
+            const res = await fetch("/upload", { method: "POST", body: fd });
             const data = await res.json();
-            if (!res.ok) {
-                throw new Error(data.error || "Upload failed");
-            }
+            if (!res.ok) throw new Error(data.error || "Upload failed");
 
-            // Success
             currentDocId = data.doc_id;
-            docTitle.textContent = data.filename;
-            docMeta.textContent = `${data.pages} Pages • ${data.chunks} Searchable Chunks`;
+            activeFilename.textContent = file.name;
+            pillFilename.textContent = file.name;
+            activeMeta.textContent = `(${data.pages} pages • ${data.chunks} vector chunks)`;
 
-            uploadSection.classList.add("hidden");
-            workspace.classList.remove("hidden");
+            introContainer.classList.add("hidden");
+            workspaceContainer.classList.remove("hidden");
             questionInput.focus();
-
         } catch (err) {
-            showUploadError(err.message);
+            showError(err.message);
         } finally {
             dropContent.classList.remove("hidden");
             uploadProgress.classList.add("hidden");
@@ -112,173 +75,164 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    function showUploadError(msg) {
-        uploadError.textContent = msg;
-        uploadError.classList.remove("hidden");
-    }
-
-    function hideUploadError() {
-        uploadError.classList.add("hidden");
-    }
+    function showError(m) { uploadError.textContent = m; uploadError.classList.remove("hidden"); }
+    function hideError() { uploadError.classList.add("hidden"); }
 
     changeDocBtn.addEventListener("click", () => {
         currentDocId = null;
-        workspace.classList.add("hidden");
-        uploadSection.classList.remove("hidden");
-        answerBox.classList.add("hidden");
-        trustScoreCard.classList.add("hidden");
-        claimsList.innerHTML = `
-            <div class="empty-state">
-                <span class="empty-icon">🛡️</span>
-                <p>Ask a question to audit AI claims against source truth.</p>
+        workspaceContainer.classList.add("hidden");
+        introContainer.classList.remove("hidden");
+        // Reset stream to initial greeting
+        chatStream.innerHTML = `
+            <div class="msg-wrapper system">
+                <div class="avatar-box gem">🤖</div>
+                <div class="bubble system-bubble">
+                    <p>Document session reset. Upload a new PDF above to begin.</p>
+                </div>
             </div>
         `;
-        auditStatus.textContent = "Waiting for query...";
     });
 
     // --- Q&A Handlers ---
-    askBtn.addEventListener("click", handleAsk);
+    askBtn.addEventListener("click", sendQuery);
     questionInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            handleAsk();
-        }
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendQuery(); }
     });
 
-    async function handleAsk() {
+    async function sendQuery() {
         const q = questionInput.value.trim();
-        if (!q) return;
+        if (!q || askBtn.disabled) return;
 
-        const rogueToggle = document.getElementById("rogueModeToggle");
-        const rogueMode = rogueToggle ? rogueToggle.checked : false;
+        const isRogue = rogueModeToggle ? rogueModeToggle.checked : false;
 
-        askError.classList.add("hidden");
-        answerBox.classList.add("hidden");
-        askLoader.classList.remove("hidden");
+        questionInput.value = "";
+        questionInput.style.height = "auto";
         askBtn.disabled = true;
 
-        auditStatus.textContent = rogueMode ? "Simulating rogue AI & auditing..." : "Analyzing claims & searching text...";
-        trustScoreCard.classList.add("hidden");
-        claimsList.innerHTML = `
-            <div class="empty-state">
-                <div class="spinner" style="width:36px;height:36px;border-width:3px;"></div>
-                <p style="margin-top:1rem;">Auditing AI statements against document truth...</p>
+        // Append User Msg
+        appendMessage("user", q);
+
+        // Append Assistant Loading Skeleton
+        const loadingId = "loader_" + Date.now();
+        const loadingWrapper = document.createElement("div");
+        loadingWrapper.className = "msg-wrapper assistant";
+        loadingWrapper.id = loadingId;
+        loadingWrapper.innerHTML = `
+            <div class="avatar-box gem">🤖</div>
+            <div class="bubble">
+                <div style="display:flex;align-items:center;gap:0.75rem;color:#c084fc;">
+                    <div class="modern-loader"></div>
+                    <span>${isRogue ? "Simulating rogue AI & auditing grounding..." : "Searching TF-IDF vectors & auditing atomic claims..."}</span>
+                </div>
             </div>
         `;
+        chatStream.appendChild(loadingWrapper);
+        scrollToBottom();
 
         try {
             const res = await fetch("/ask", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ doc_id: currentDocId, question: q, rogue_mode: rogueMode })
+                body: JSON.stringify({ doc_id: currentDocId, question: q, rogue_mode: isRogue })
             });
-
             const data = await res.json();
-            if (!res.ok) {
-                throw new Error(data.error || "Failed to generate answer");
-            }
+            if (!res.ok) throw new Error(data.error || "Failed query");
 
-            // Render AI Answer safely
-            answerContent.textContent = data.answer;
-            answerBox.classList.remove("hidden");
+            // Replace loader with AI response + DeepSeek Grounding Box
+            const loaderElem = document.getElementById(loadingId);
+            if (loaderElem) loaderElem.remove();
 
-            // Render Verdict Dashboard
-            renderAuditDashboard(data.trust_score, data.claims);
-            auditStatus.textContent = `Audited ${data.claims.length} Atomic Claims`;
+            renderAssistantAnswer(data.answer, data.trust_score, data.claims, isRogue);
 
         } catch (err) {
-            askError.textContent = err.message;
-            askError.classList.remove("hidden");
-            auditStatus.textContent = "Audit failed";
-            claimsList.innerHTML = `
-                <div class="empty-state">
-                    <p style="color:#ef4444;">Verification Error: ${escapeHtml(err.message)}</p>
-                </div>
-            `;
-        } finally {
-            askLoader.classList.add("hidden");
-            askBtn.disabled = false;
-        }
-    }
-
-    function renderAuditDashboard(score, claims) {
-        // Score Gauge
-        const percentage = Math.round(score * 100);
-        scoreVal.textContent = `${percentage}%`;
-
-        // Color coding
-        let color = "#ef4444";
-        let bg = "rgba(239, 68, 68, 0.15)";
-        let title = "High Hallucination Risk";
-        let desc = "Multiple statements unsupported by source document.";
-
-        if (percentage >= 80) {
-            color = "#10b981";
-            bg = "rgba(16, 185, 129, 0.15)";
-            title = "High Grounding Verified";
-            desc = "Statements are strongly backed by document text.";
-        } else if (percentage >= 50) {
-            color = "#f59e0b";
-            bg = "rgba(245, 158, 11, 0.15)";
-            title = "Moderate Accuracy (Verify)";
-            desc = "Some claims are partial or missing crucial nuance.";
-        }
-
-        scoreCircle.style.borderColor = color;
-        scoreCircle.style.background = bg;
-        verdictSummaryTitle.textContent = title;
-        verdictSummaryTitle.style.color = color;
-        verdictSummaryDesc.textContent = desc;
-
-        trustScoreCard.classList.remove("hidden");
-
-        // Render Claims List safely against XSS
-        claimsList.innerHTML = "";
-        claims.forEach((item) => {
-            const verdict = str(item.verdict).toUpperCase();
-            let verdictClass = "hallucinated";
-            let badgeText = "❌ Hallucinated";
-            let badgeClass = "badge-hallucinated";
-
-            if (verdict.includes("SUPPORTED")) {
-                verdictClass = "supported";
-                badgeText = "✅ Supported";
-                badgeClass = "badge-supported";
-            } else if (verdict.includes("PARTIAL")) {
-                verdictClass = "partial";
-                badgeText = "⚠️ Partial";
-                badgeClass = "badge-partial";
+            const loaderElem = document.getElementById(loadingId);
+            if (loaderElem) {
+                loaderElem.innerHTML = `
+                    <div class="avatar-box gem">🤖</div>
+                    <div class="bubble" style="border-color:#ef4444;">
+                        <p style="color:#ef4444;">Verification Error: ${escapeHtml(err.message)}</p>
+                    </div>
+                `;
             }
+        } finally {
+            askBtn.disabled = false;
+            scrollToBottom();
+        }
+    }
 
-            const safeClaim = escapeHtml(item.claim);
-            const safeReason = escapeHtml(item.reasoning || "");
-            const safePage = escapeHtml(item.source_page || "N/A");
+    function appendMessage(role, text) {
+        const wrapper = document.createElement("div");
+        wrapper.className = `msg-wrapper ${role}`;
+        wrapper.innerHTML = `
+            <div class="avatar-box ${role === 'user' ? 'user' : 'gem'}">${role === 'user' ? '👤' : '🤖'}</div>
+            <div class="bubble ${role === 'user' ? 'user-bubble' : ''}">
+                <p>${escapeHtml(text).replace(/\n/g, '<br>')}</p>
+            </div>
+        `;
+        chatStream.appendChild(wrapper);
+        scrollToBottom();
+    }
 
-            const card = document.createElement("div");
-            card.className = `claim-card ${verdictClass}`;
-            card.innerHTML = `
-                <div class="claim-top">
-                    <span class="verdict-badge ${badgeClass}">${badgeText}</span>
-                    <span class="page-tag">Page ${safePage}</span>
+    function renderAssistantAnswer(answer, score, claims, isRogue) {
+        const percentage = Math.round(score * 100);
+        let badgeClass = "badge-red";
+        let titleText = `${percentage}% Trust • Hallucinated Risk`;
+
+        if (percentage >= 80) { badgeClass = "badge-green"; titleText = `${percentage}% Grounded Verified`; }
+        else if (percentage >= 50) { badgeClass = "badge-yellow"; titleText = `${percentage}% Partial Grounding`; }
+
+        const boxClass = (percentage < 60 || isRogue) ? "grounding-box hallucinated-mode" : "grounding-box";
+
+        let claimsHtml = "";
+        claims.forEach(c => {
+            const v = str(c.verdict).toUpperCase();
+            let cls = "hallucinated"; let tagTxt = "❌ Hallucinated";
+            if (v.includes("SUPPORTED")) { cls = "supported"; tagTxt = "✅ Grounded"; }
+            else if (v.includes("PARTIAL")) { cls = "partial"; tagTxt = "⚠️ Partial"; }
+
+            claimsHtml += `
+                <div class="claim-card-ds ${cls}">
+                    <span class="claim-tag ${cls}">${tagTxt} (Page ${escapeHtml(c.source_page || "N/A")})</span>
+                    <div class="quote-txt">"${escapeHtml(c.claim)}"</div>
+                    <div class="reason-txt">${escapeHtml(c.reasoning || "")}</div>
                 </div>
-                <div class="claim-text">"${safeClaim}"</div>
-                <div class="claim-reason">${safeReason}</div>
             `;
-            claimsList.appendChild(card);
         });
+
+        const wrapper = document.createElement("div");
+        wrapper.className = "msg-wrapper assistant";
+        wrapper.innerHTML = `
+            <div class="avatar-box gem">🤖</div>
+            <div class="bubble">
+                <!-- AI Answer -->
+                <div style="font-size:1.02rem;line-height:1.7;color:#fff;margin-bottom:1.5rem;">
+                    ${escapeHtml(answer).replace(/\n/g, '<br>')}
+                </div>
+
+                <!-- DeepSeek Expandable Accordion -->
+                <div class="${boxClass}">
+                    <div class="grounding-header" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                        <div class="gh-left">
+                            <span>🧠</span>
+                            <span>Atomic Grounding Audit</span>
+                            <span class="trust-badge ${badgeClass}">${titleText}</span>
+                        </div>
+                        <span style="font-size:0.8rem;color:#9ca3af;">Audited ${claims.length} claims ▼</span>
+                    </div>
+                    <div class="claims-grid">
+                        ${claimsHtml}
+                    </div>
+                </div>
+            </div>
+        `;
+        chatStream.appendChild(wrapper);
+        scrollToBottom();
     }
 
-    function str(val) {
-        return val ? String(val) : "";
-    }
-
-    function escapeHtml(text) {
-        if (!text) return "";
-        return String(text)
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
+    function scrollToBottom() { chatStream.scrollTop = chatStream.scrollHeight; }
+    function str(v) { return v ? String(v) : ""; }
+    function escapeHtml(t) {
+        if (!t) return "";
+        return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     }
 });
