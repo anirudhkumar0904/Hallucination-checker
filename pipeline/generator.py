@@ -48,7 +48,7 @@ USER QUESTION:
 
 Provide a well-structured, professional answer based strictly on the document excerpts above."""
 
-    model = os.environ.get("GROQ_MODEL", "llama-3.1-70b-versatile")
+    model = os.environ.get("GROQ_MODEL", "llama3-70b-8192")
     response = client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],
