@@ -44,7 +44,7 @@ Example format:
 ]
 Do not wrap in markdown code blocks if possible."""
 
-    model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+    model = os.environ.get("GROQ_MODEL", "llama-3.1-70b-versatile")
     response = client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],
