@@ -201,8 +201,8 @@ document.addEventListener("DOMContentLoaded", () => {
         row.innerHTML = `
             <div class="icon-avatar">AI</div>
             <div class="card">
-                <div style="margin-bottom:1.25rem;">
-                    ${escapeHtml(ans).replace(/\n/g, '<br>')}
+                <div style="margin-bottom:1.25rem;" class="markdown-body">
+                    ${marked.parse(ans)}
                 </div>
 
                 <div class="${boxCls}">
