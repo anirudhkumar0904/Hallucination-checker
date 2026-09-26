@@ -44,7 +44,7 @@ Example format:
 ]
 Do not wrap in markdown code blocks if possible."""
 
-    model = os.environ.get("GROQ_MODEL", "llama3-70b-8192")
+    model = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
     response = client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],
